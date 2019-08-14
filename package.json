@@ -1,0 +1,17 @@
+{
+  "name": "cloud-search",
+  "version": "1.0.0",
+  "description": "",
+  "main": "export.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "aws-sdk": "2.506.0",
+    "folktale": "2.3.2",
+    "readline-sync": "1.4.10"
+  }
+}
