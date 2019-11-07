@@ -12,7 +12,7 @@ program
   .parse(process.argv);
 
 const stat = file => {return new Promise((resolve, reject) => {
-  fs.stat(file, _, (err, stats) => {
+  fs.stat(file, (err, stats) => {
     if (err) {
       reject(err);
     } else {
