@@ -1,72 +1,26 @@
 const AWS = require('aws-sdk');
 const fs = require('fs');
 const readlineSync = require('readline-sync');
+const unFoldAsync = require('./src/unfold').unfoldAsync;
+const search = require('./src/cloud-search');
 
 const region = 'eu-west-1';
 const apiVersion = '2013-01-01';
 
 var batchSize = 1000;
 
-const cs = new AWS.CloudSearch({
+const client = createClient(new AWS.CloudSearch({
   region,
   apiVersion
-});
+}));
 
-const describeIndexFields = DomainName => cs.describeIndexFields({
-    DomainName
-  })
-  .promise()
-  .then(data => data.IndexFields);
-
-const listDomains = () => cs.listDomainNames()
-  .promise()
-  .then(data => Object.keys(data.DomainNames));
-
-const getEndpoint = domain => cs.describeDomains({
-    DomainNames: [domain]
-  })
-  .promise()
-  .then(data => data.DomainStatusList[0].SearchService.Endpoint)
-  .catch(() => new Error("No domain list in response."));
-
-
-const apiClient = async (offset, endpoint) => {
-  const csd = new AWS.CloudSearchDomain({
-    endpoint,
-    region
+const onSuccess = (response) =>
+  Promise.resolve(0 === response.hits.hit.length ? {
+    done: true
+  } : {
+    next: response.hits.cursor,
+    items: response.hits.hit
   });
-
-  return csd.search({
-      query: "matchall",
-      cursor: offset || "initial",
-      size: batchSize,
-      queryParser: "structured",
-      // return: "_all_fields",
-      return: "created_date,event_date,film_orderable_state,fk_*,location,meta_*,normaltitle,rating,row_id,table_class,tag_cat_*,text_content"
-    })
-    .promise()
-    .then(data => {
-      return {
-        next: 0 === data.hits.hit.length ? null : data.hits.cursor,
-        items: data.hits.hit
-      };
-    });
-};
-
-const getitems = async (endpoint) => {
-  const doGetItems = (offset, acc) => {
-    return apiClient(offset, endpoint)
-      .then(response => {
-        if (null === response.next) {
-          return acc.concat(response.items);
-        } else {
-          return doGetItems(response.next, acc.concat(response.items));
-        }
-      })
-  };
-
-  return doGetItems("initial", []);
-};
 
 const matchIndex = (name, indexes) => indexes.find(element => !!name.match(new RegExp("^" + element.Options.IndexFieldName)));
 
@@ -80,14 +34,15 @@ const processRow = (row, indexes) => {
       row.fields[key] = row.fields[key][0];
     }
   });
-  
+
   row.type = "add";
   return row;
 };
 
+
 const p = async () => {
 
-  const names = await listDomains();
+  const names = await client.listDomains();
 
   const index = readlineSync.keyInSelect(
     names,
@@ -98,11 +53,29 @@ const p = async () => {
     return Promise.reject(new Error("Cancelled by user."));
   }
 
-  const endpoint = await getEndpoint(names[index]);
-  const indexes = await describeIndexFields(names[index]);
+  const endpoint = await client.getEndpoint(names[index]);
+  const indexes = await client.describeIndexFields(names[index]);
 
-  const items = await getitems(endpoint);
-  
+  const unFoldFn = unFoldAsync(onSuccess);
+
+  const unFolder = unFoldFn(offset => {
+    const csd = new AWS.CloudSearchDomain({
+      endpoint,
+      region
+    });
+
+    return csd.search({
+        query: "matchall",
+        cursor: offset,
+        size: batchSize,
+        queryParser: "structured",
+        return: indexes.map(index => index.Options.IndexFieldName).sort().join(',')
+      })
+      .promise();
+  });
+
+  const items = await unFolder("initial");
+
   const parsed = items.map((element) => processRow(element, indexes));
 
   fs.writeFile(__dirname + '/' + names[index] + '-documents.json', JSON.stringify(parsed), function (err) {
@@ -111,5 +84,4 @@ const p = async () => {
     }
   });
 };
-
 p();

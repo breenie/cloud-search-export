@@ -11,6 +11,7 @@
   "license": "ISC",
   "dependencies": {
     "aws-sdk": "2.506.0",
+    "commander": "4.0.0",
     "folktale": "2.3.2",
     "readline-sync": "1.4.10"
   }
